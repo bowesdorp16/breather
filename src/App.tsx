@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ExerciseSelector } from './components/ExerciseSelector';
 import { BreathingCircle } from './components/BreathingCircle';
@@ -13,58 +13,67 @@ const exercises: Exercise[] = [
   { name: 'Deep Relaxation', inhale: 7, hold: 0, exhale: 11, rest: 0 }
 ];
 
+const FRAME_RATE = 60;
+const FRAME_DURATION = 1000 / FRAME_RATE;
+
 function App() {
   const [isActive, setIsActive] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState<Exercise>(exercises[0]);
   const [breathingState, setBreathingState] = useState<BreathingState>('inhale');
   const [progress, setProgress] = useState(0);
 
+  const updateBreathingState = useCallback(() => {
+    let nextState: BreathingState = 'inhale';
+    switch (breathingState) {
+      case 'inhale':
+        nextState = selectedExercise.hold > 0 ? 'hold' : 'exhale';
+        break;
+      case 'hold':
+        nextState = 'exhale';
+        break;
+      case 'exhale':
+        nextState = selectedExercise.rest > 0 ? 'rest' : 'inhale';
+        break;
+      case 'rest':
+        nextState = 'inhale';
+        break;
+    }
+    setBreathingState(nextState);
+    setProgress(0);
+  }, [breathingState, selectedExercise]);
+
   useEffect(() => {
     if (!isActive) return;
 
-    let duration: number;
-    switch (breathingState) {
-      case 'inhale':
-        duration = selectedExercise.inhale;
-        break;
-      case 'hold':
-        duration = selectedExercise.hold;
-        break;
-      case 'exhale':
-        duration = selectedExercise.exhale;
-        break;
-      case 'rest':
-        duration = selectedExercise.rest;
-        break;
-    }
+    let animationFrameId: number;
+    let lastTimestamp: number;
 
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          let nextState: BreathingState = 'inhale';
-          switch (breathingState) {
-            case 'inhale':
-              nextState = selectedExercise.hold > 0 ? 'hold' : 'exhale';
-              break;
-            case 'hold':
-              nextState = 'exhale';
-              break;
-            case 'exhale':
-              nextState = selectedExercise.rest > 0 ? 'rest' : 'inhale';
-              break;
-            case 'rest':
-              nextState = 'inhale';
-              break;
+    const animate = (timestamp: number) => {
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const deltaTime = timestamp - lastTimestamp;
+
+      if (deltaTime >= FRAME_DURATION) {
+        const duration = selectedExercise[breathingState] * 1000;
+        const increment = (deltaTime / duration) * 100;
+
+        setProgress(prev => {
+          const next = prev + increment;
+          if (next >= 100) {
+            updateBreathingState();
+            return 0;
           }
-          setBreathingState(nextState);
-          return 0;
-        }
-        return prev + (100 / (duration * 1000 / 16.67));
-      });
-    }, 16.67);
+          return next;
+        });
 
-    return () => clearInterval(interval);
-  }, [isActive, breathingState, selectedExercise]);
+        lastTimestamp = timestamp;
+      }
+
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isActive, breathingState, selectedExercise, updateBreathingState]);
 
   return (
     <div className="min-h-screen animate-gradient bg-gradient-to-br from-blue-950 via-blue-800 to-blue-900 text-white/90 flex flex-col items-center justify-center p-6">
@@ -78,6 +87,8 @@ function App() {
           onExerciseChange={(exercise) => {
             setIsActive(false);
             setSelectedExercise(exercise);
+            setBreathingState('inhale');
+            setProgress(0);
           }}
         />
 
@@ -100,7 +111,8 @@ function App() {
             bg-gradient-to-br from-blue-800 to-blue-900
             shadow-[8px_8px_16px_rgba(0,0,0,0.25),-8px_-8px_16px_rgba(255,255,255,0.1)]
             active:shadow-[4px_4px_8px_rgba(0,0,0,0.25),-4px_-4px_8px_rgba(255,255,255,0.1)]
-            active:transform active:scale-95"
+            active:transform active:scale-95
+            hover:from-blue-700 hover:to-blue-800"
         >
           {isActive ? 'Stop' : 'Start'}
         </button>
